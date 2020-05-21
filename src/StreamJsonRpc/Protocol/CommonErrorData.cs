@@ -35,6 +35,24 @@ namespace StreamJsonRpc.Protocol
             this.HResult = copyFrom.HResult;
             this.TypeName = copyFrom.GetType().FullName;
             this.Inner = copyFrom.InnerException != null ? new CommonErrorData(copyFrom.InnerException) : null;
+
+            var info = new SerializationInfo(copyFrom.GetType(), new FormatterConverter());
+            // Looks like the more useful context to use, see https://github.com/dotnet/runtime/blob/master/src/coreclr/src/System.Private.CoreLib/src/System/Exception.CoreCLR.cs#L30
+            var context = new StreamingContext(StreamingContextStates.CrossAppDomain);
+
+            copyFrom.GetObjectData(info, context);
+            this.Data = new Dictionary<string, object>
+            {
+                // Serialize only the simple assembly name.
+                { "AssemblyName", copyFrom.GetType().Assembly.GetName().Name },
+            };
+            foreach (SerializationEntry entry in info)
+            {
+                if (entry.Name != "WatsonBuckets")
+                {
+                    this.Data[entry.Name] = entry.Value;
+                }
+            }
         }
 
         /// <summary>
@@ -66,5 +84,11 @@ namespace StreamJsonRpc.Protocol
         /// </summary>
         [DataMember(Order = 4, Name = "inner")]
         public CommonErrorData? Inner { get; set; }
+
+        /// <summary>
+        /// Gets or sets the inner error information, if any.
+        /// </summary>
+        [DataMember(Order = 5, Name = "data")]
+        public Dictionary<string, object>? Data { get; set; }
     }
 }

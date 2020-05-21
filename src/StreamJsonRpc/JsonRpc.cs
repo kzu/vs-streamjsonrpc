@@ -14,11 +14,13 @@ namespace StreamJsonRpc
     using System.IO;
     using System.Linq;
     using System.Reflection;
+    using System.Runtime.Serialization;
     using System.Threading;
     using System.Threading.Tasks;
     using Microsoft;
     using Microsoft.VisualStudio.Threading;
     using Newtonsoft.Json;
+    using Newtonsoft.Json.Linq;
     using StreamJsonRpc.Protocol;
     using StreamJsonRpc.Reflection;
 
@@ -1564,6 +1566,46 @@ namespace StreamJsonRpc
             Assumes.NotNull(response.Error);
             Type? dataType = this.GetErrorDetailsDataType(response);
             object? deserializedData = dataType != null ? response.Error.GetData(dataType) : response.Error.Data;
+
+            Exception? innerException = default;
+            if (deserializedData is CommonErrorData commonError &&
+                commonError.Data != null &&
+                commonError.Data.TryGetValue("ClassName", out var exceptionClass) &&
+                commonError.Data.TryGetValue("AssemblyName", out var exceptionAssembly) &&
+                Type.GetType($"{exceptionClass}, {exceptionAssembly}") is Type exceptionType &&
+                typeof(Exception).IsAssignableFrom(exceptionType) &&
+                exceptionType
+                    .GetTypeInfo()
+                    .GetConstructor(BindingFlags.NonPublic | BindingFlags.Instance, null, new[] { typeof(SerializationInfo), typeof(StreamingContext) }, Array.Empty<ParameterModifier>()) is ConstructorInfo ctor)
+            {
+                var info = new SerializationInfo(exceptionType, new FormatterConverter());
+                // Looks like the more useful context to use, see https://github.com/dotnet/runtime/blob/master/src/coreclr/src/System.Private.CoreLib/src/System/Exception.CoreCLR.cs#L30
+                var context = new StreamingContext(StreamingContextStates.CrossAppDomain);
+
+                foreach (var entry in commonError.Data)
+                {
+                    if (entry.Key == "Data")
+                    {
+                        var pairs = entry.Value as IEnumerable<KeyValuePair<string, JToken>>;
+                        var data = new Dictionary<string, object>();
+
+                        // This will be the dictionary, but it will be wrongly deserialized as a keyvalue pair of string+JToken
+                        foreach (var pair in pairs.Where(x => x.Value is JValue))
+                        {
+                            data[pair.Key] = ((JValue)pair.Value).Value;
+                        }
+
+                        info.AddValue(entry.Key, data);
+                    }
+                    else
+                    {
+                        info.AddValue(entry.Key, entry.Value);
+                    }
+                }
+
+                innerException = (Exception)ctor.Invoke(new object[] { info, context });
+            }
+
             switch (response.Error.Code)
             {
                 case JsonRpcErrorCode.InvalidParams:
@@ -1571,7 +1613,7 @@ namespace StreamJsonRpc
                     return new RemoteMethodNotFoundException(response.Error.Message, targetName, response.Error.Code, response.Error.Data, deserializedData);
 
                 default:
-                    return new RemoteInvocationException(response.Error.Message, (int)response.Error.Code, response.Error.Data, deserializedData);
+                    return new RemoteInvocationException(response.Error.Message, (int)response.Error.Code, response.Error.Data, deserializedData, innerException);
             }
         }
 

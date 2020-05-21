@@ -25,8 +25,8 @@ namespace StreamJsonRpc
         /// <param name="message">The message.</param>
         /// <param name="errorCode">The value of the error.code field in the response.</param>
         /// <param name="errorData">The value of the error.data field in the response.</param>
-        public RemoteInvocationException(string? message, int errorCode, object? errorData)
-            : base(message)
+        public RemoteInvocationException(string? message, int errorCode, object? errorData, Exception? innerException = default)
+            : base(message, innerException)
         {
             this.ErrorCode = errorCode;
             this.ErrorData = errorData;
@@ -39,8 +39,8 @@ namespace StreamJsonRpc
         /// <param name="errorCode">The value of the error.code field in the response.</param>
         /// <param name="errorData">The value of the error.data field in the response.</param>
         /// <param name="deserializedErrorData">The value of the error.data field in the response, deserialized according to <see cref="JsonRpc.GetErrorDetailsDataType(JsonRpcError)"/>.</param>
-        public RemoteInvocationException(string? message, int errorCode, object? errorData, object? deserializedErrorData)
-            : base(message)
+        public RemoteInvocationException(string? message, int errorCode, object? errorData, object? deserializedErrorData, Exception? innerException = default)
+            : base(message, innerException)
         {
             this.ErrorCode = errorCode;
             this.ErrorData = errorData;
